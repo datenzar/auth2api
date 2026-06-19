@@ -44,8 +44,12 @@
               type = lib.types.nullOr lib.types.path;
               default = null;
               description = ''
-                Path to an existing auth2api YAML configuration file. When unset,
-                services.auth2api.settings is rendered to a Nix store YAML file.
+                Path to an existing auth2api YAML configuration file. Use this
+                for writable or secret-backed configs, such as a file in /run or
+                /var/lib/auth2api. When unset, services.auth2api.settings is
+                rendered to a read-only Nix store YAML file and must include at
+                least one api-key because auth2api writes generated keys back to
+                the config file when none are configured.
               '';
             };
 
@@ -61,9 +65,11 @@
               };
               description = ''
                 auth2api configuration rendered as YAML when configFile is unset.
-                Secret values such as api-keys will be copied into the Nix store;
-                use configFile for deployments that need to keep secrets out of
-                the store.
+                When using the generated store config, api-keys must contain at
+                least one key so auth2api does not try to generate and write one
+                back to the read-only Nix store at startup. Secret values such as
+                api-keys will be copied into the Nix store; use configFile for
+                deployments that need to keep secrets out of the store.
               '';
             };
 
@@ -75,6 +81,21 @@
           };
 
           config = lib.mkIf cfg.enable {
+            assertions = [
+              {
+                assertion =
+                  cfg.configFile != null
+                  || (cfg.settings ? "api-keys" && cfg.settings."api-keys" != [ ]);
+                message = ''
+                  services.auth2api requires either services.auth2api.configFile
+                  or at least one services.auth2api.settings.api-keys entry.
+                  auth2api auto-generates and writes an API key when none are
+                  configured, which cannot work with the read-only Nix store
+                  config generated from services.auth2api.settings.
+                '';
+              }
+            ];
+
             services.auth2api.settings = lib.mkDefault {
               host = "127.0.0.1";
               port = 8317;
