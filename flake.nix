@@ -172,8 +172,7 @@
           configFile = if cfg.configFile != null then cfg.configFile else generatedConfig;
           hasUser = cfg.user != null;
           hasGroup = cfg.group != null;
-          authDir =
-            if builtins.hasAttr "auth-dir" cfg.settings then cfg.settings."auth-dir" else cfg.stateDir;
+          authDir = cfg.authDir;
           launchScript = pkgs.writeShellScript "auth2api-launchd" ''
             set -eu
 
@@ -218,12 +217,41 @@
               '';
             };
 
+            uid = lib.mkOption {
+              type = lib.types.int;
+              default = 350;
+              description = ''
+                macOS UniqueID used when provisioning the default _auth2api user.
+                Change this if the UID is already allocated on your system.
+              '';
+            };
+
+            gid = lib.mkOption {
+              type = lib.types.int;
+              default = 350;
+              description = ''
+                macOS PrimaryGroupID used when provisioning the default _auth2api
+                group. Change this if the GID is already allocated on your system.
+              '';
+            };
+
             stateDir = lib.mkOption {
               type = lib.types.str;
               default = "/var/db/auth2api";
               description = ''
-                Writable directory used for OAuth token storage, generated stats,
-                and as the launchd daemon working directory on macOS.
+                Writable directory used for generated stats and as the launchd
+                daemon working directory on macOS.
+              '';
+            };
+
+            authDir = lib.mkOption {
+              type = lib.types.str;
+              default = "/var/db/auth2api";
+              description = ''
+                Writable directory used for OAuth token storage and for the
+                launchd startup token-file guard. When configFile points at an
+                external YAML file, keep this value in sync with that file's
+                auth-dir so launchd waits in the same directory auth2api reads.
               '';
             };
 
@@ -295,6 +323,10 @@
                 message = "services.auth2api.stateDir must be an absolute path for launchd.";
               }
               {
+                assertion = builtins.substring 0 1 cfg.authDir == "/";
+                message = "services.auth2api.authDir must be an absolute path for launchd.";
+              }
+              {
                 assertion = cfg.configFile == null || builtins.substring 0 1 cfg.configFile == "/";
                 message = "services.auth2api.configFile must be null or an absolute path for launchd.";
               }
@@ -303,12 +335,12 @@
             services.auth2api.settings = lib.mkDefault {
               host = "127.0.0.1";
               port = cfg.port;
-              "auth-dir" = toString cfg.stateDir;
+              "auth-dir" = toString cfg.authDir;
             };
 
             system.activationScripts.auth2api.text = lib.optionalString (cfg.group == "_auth2api") ''
               if ! /usr/bin/dscl . -read /Groups/_auth2api > /dev/null 2>&1; then
-                /usr/sbin/dseditgroup -o create _auth2api
+                /usr/sbin/dseditgroup -o create -i ${toString cfg.gid} _auth2api
               fi
             '' + lib.optionalString (cfg.user == "_auth2api") ''
               if ! /usr/bin/dscl . -read /Users/_auth2api > /dev/null 2>&1; then
@@ -316,15 +348,16 @@
                 /usr/bin/dscl . -create /Users/_auth2api UserShell /usr/bin/false
                 /usr/bin/dscl . -create /Users/_auth2api RealName "auth2api daemon"
                 /usr/bin/dscl . -create /Users/_auth2api NFSHomeDirectory '${cfg.stateDir}'
-                /usr/bin/dscl . -create /Users/_auth2api PrimaryGroupID 20
+                /usr/bin/dscl . -create /Users/_auth2api UniqueID ${toString cfg.uid}
+                /usr/bin/dscl . -create /Users/_auth2api PrimaryGroupID ${toString cfg.gid}
               fi
               /usr/sbin/dseditgroup -o edit -a _auth2api -t user _auth2api
             '' + ''
-              mkdir -p '${cfg.stateDir}' /var/log/auth2api
-              chmod 0750 '${cfg.stateDir}'
+              mkdir -p '${cfg.stateDir}' '${cfg.authDir}' /var/log/auth2api
+              chmod 0750 '${cfg.stateDir}' '${cfg.authDir}'
               chmod 0755 /var/log/auth2api
             '' + lib.optionalString (hasUser || hasGroup) ''
-              chown ${lib.optionalString hasUser cfg.user}${lib.optionalString hasGroup ":${cfg.group}"} '${cfg.stateDir}' /var/log/auth2api
+              chown ${lib.optionalString hasUser cfg.user}${lib.optionalString hasGroup ":${cfg.group}"} '${cfg.stateDir}' '${cfg.authDir}' /var/log/auth2api
             '';
 
             launchd.daemons.auth2api = {
