@@ -151,6 +151,17 @@ curl http://127.0.0.1:8317/v1/chat/completions \
   }'
 ```
 
+### Usage insights
+
+`GET /admin/usage` asks each logged-in upstream account for its current quota window information and returns normalized usage windows. Anthropic and Codex accounts report 5-hour and 7-day windows when the upstream service exposes them; Cursor currently returns `unsupported` because there is no compatible quota endpoint.
+
+```bash
+curl http://127.0.0.1:8317/admin/usage \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+Each usage row includes the provider, account email, status, optional plan type, usage percentage, reset timestamp, remaining seconds, and a human-readable `timeLeft` value. Request-level aggregates remain available at `GET /admin/stats`.
+
 ### Available models
 
 `GET /v1/models` lists only models for providers you've actually logged in to. The codex list is **fetched live** from `chatgpt.com/backend-api/codex/models` (cached 5 minutes, ETag-aware) so it always matches what your account can actually serve. Cursor models are fetched from Cursor's internal AvailableModels endpoint when possible, with a small fallback list. The current ChatGPT-account-supported set at the time of writing:

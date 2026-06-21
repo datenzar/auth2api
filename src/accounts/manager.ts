@@ -477,6 +477,10 @@ export class AccountManager {
     return acct.refreshPromise;
   }
 
+  getTokens(): TokenData[] {
+    return Array.from(this.accounts.values(), (acct) => ({ ...acct.token }));
+  }
+
   getSnapshots(): AccountSnapshot[] {
     const now = Date.now();
     const snapshots: AccountSnapshot[] = [];
