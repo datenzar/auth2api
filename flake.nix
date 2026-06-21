@@ -185,7 +185,7 @@
             mkdir -p $out/lib/auth2api $out/bin
             cp -r dist node_modules package.json $out/lib/auth2api/
 
-            makeWrapper ${pkgs.nodejs_20}/bin/node $out/bin/auth2api \
+            makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/auth2api \
               --add-flags $out/lib/auth2api/dist/index.js
 
             runHook postInstall
@@ -201,7 +201,7 @@
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            nodejs_20
+            nodejs_22
             nodePackages.npm
           ];
         };
