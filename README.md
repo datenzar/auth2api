@@ -91,6 +91,49 @@ node dist/index.js
 
 The server starts on `http://127.0.0.1:8317` by default. On first run, an API key is auto-generated and saved to `config.yaml`.
 
+### NixOS service
+
+This repository also exposes a Nix flake package and NixOS module. A minimal
+NixOS configuration can import the module and run auth2api as a managed systemd
+service:
+
+```nix
+{
+  inputs.auth2api.url = "github:AmazingAng/auth2api";
+
+  outputs = { nixpkgs, auth2api, ... }: {
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        auth2api.nixosModules.default
+        {
+          services.auth2api = {
+            enable = true;
+            openFirewall = true;
+            port = 8317;
+            settings = {
+              host = "0.0.0.0";
+              "api-keys" = [ "sk-change-me" ];
+            };
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+By default the service stores OAuth tokens and stats in `/var/lib/auth2api`.
+For deployments that keep API keys outside the Nix store, set
+`services.auth2api.configFile` to an absolute runtime path such as
+`"/run/secrets/auth2api.yaml"` instead of putting `api-keys` in
+`services.auth2api.settings`. The NixOS module requires either `configFile` or
+a non-empty `settings."api-keys"` list, because generated Nix store
+configuration files are read-only and auth2api cannot auto-save a generated API
+key there at service startup. If `configFile` sets a non-default port and
+`openFirewall = true`, also set `services.auth2api.port` to the same value so
+NixOS opens the port auth2api actually listens on.
+
 ## Configuration
 
 Copy `config.example.yaml` to `config.yaml` and edit as needed:
