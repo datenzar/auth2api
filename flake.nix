@@ -172,6 +172,20 @@
           configFile = if cfg.configFile != null then cfg.configFile else generatedConfig;
           hasUser = cfg.user != null;
           hasGroup = cfg.group != null;
+          authDir =
+            if builtins.hasAttr "auth-dir" cfg.settings then cfg.settings."auth-dir" else cfg.stateDir;
+          launchScript = pkgs.writeShellScript "auth2api-launchd" ''
+            set -eu
+
+            while ! compgen -G ${lib.escapeShellArg "${authDir}/claude-*.json"} > /dev/null \
+              && ! compgen -G ${lib.escapeShellArg "${authDir}/codex-*.json"} > /dev/null \
+              && ! compgen -G ${lib.escapeShellArg "${authDir}/cursor-*.json"} > /dev/null; do
+              echo "auth2api is waiting for an OAuth token in ${authDir}. Run auth2api login, or copy an existing claude-*.json, codex-*.json, or cursor-*.json token file into that directory." >&2
+              sleep 30
+            done
+
+            exec ${lib.escapeShellArg (lib.getExe cfg.package)} --config=${lib.escapeShellArg configFile}
+          '';
         in
         {
           options.services.auth2api = {
@@ -186,23 +200,21 @@
 
             user = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
-              default = null;
-              example = "_auth2api";
+              default = "_auth2api";
               description = ''
-                Optional user account under which the auth2api launchd daemon
-                runs. When null, launchd runs the daemon as root. Set this to an
-                existing macOS user for a less-privileged system-wide service.
+                User account under which the auth2api launchd daemon runs. The
+                default _auth2api account is provisioned by the activation script.
+                Set to null only if you explicitly want launchd to run as root.
               '';
             };
 
             group = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
-              default = null;
-              example = "_auth2api";
+              default = "_auth2api";
               description = ''
-                Optional group account under which the auth2api launchd daemon
-                runs. When null, launchd uses the default group for the selected
-                user, or root's default group when services.auth2api.user is null.
+                Group account under which the auth2api launchd daemon runs. The
+                default _auth2api group is provisioned by the activation script.
+                Set to null to use the selected user's default group.
               '';
             };
 
@@ -245,16 +257,24 @@
                 host = "127.0.0.1";
                 port = 8317;
                 "auth-dir" = "/var/db/auth2api";
-                "api-keys" = [ "sk-change-me" ];
                 debug = "errors";
               };
               description = ''
                 auth2api configuration rendered as YAML when configFile is unset.
                 Secret values such as api-keys will be copied into the Nix store;
                 use configFile for deployments that need to keep secrets out of
-                the store. As with the NixOS module, auth2api needs either an
-                external configFile or an explicit non-empty api-keys list because
-                it cannot write generated keys back to a read-only Nix store file.
+                the store. Generated store-backed api-keys are rejected unless
+                allowStoreApiKeys is explicitly enabled.
+              '';
+            };
+
+            allowStoreApiKeys = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Explicitly allow services.auth2api.settings."api-keys" to be
+                rendered into a Nix store YAML file when configFile is unset.
+                Prefer configFile for secret-bearing deployments.
               '';
             };
           };
@@ -262,13 +282,12 @@
           config = lib.mkIf cfg.enable {
             assertions = [
               {
-                assertion = cfg.configFile != null || hasConfiguredApiKeys;
+                assertion = cfg.configFile != null || (hasConfiguredApiKeys && cfg.allowStoreApiKeys);
                 message = ''
-                  services.auth2api requires either services.auth2api.configFile
-                  or a non-empty services.auth2api.settings."api-keys" list.
-                  Without one, auth2api attempts to auto-generate an API key and
-                  write it back to the generated Nix store config file, which is
-                  read-only when rendered by the Nix module.
+                  services.auth2api requires services.auth2api.configFile for
+                  secret-bearing runtime configuration. To render
+                  services.auth2api.settings."api-keys" into the Nix store
+                  anyway, set services.auth2api.allowStoreApiKeys = true.
                 '';
               }
               {
@@ -287,7 +306,20 @@
               "auth-dir" = toString cfg.stateDir;
             };
 
-            system.activationScripts.auth2api.text = ''
+            system.activationScripts.auth2api.text = lib.optionalString (cfg.group == "_auth2api") ''
+              if ! /usr/bin/dscl . -read /Groups/_auth2api > /dev/null 2>&1; then
+                /usr/sbin/dseditgroup -o create _auth2api
+              fi
+            '' + lib.optionalString (cfg.user == "_auth2api") ''
+              if ! /usr/bin/dscl . -read /Users/_auth2api > /dev/null 2>&1; then
+                /usr/bin/dscl . -create /Users/_auth2api
+                /usr/bin/dscl . -create /Users/_auth2api UserShell /usr/bin/false
+                /usr/bin/dscl . -create /Users/_auth2api RealName "auth2api daemon"
+                /usr/bin/dscl . -create /Users/_auth2api NFSHomeDirectory '${cfg.stateDir}'
+                /usr/bin/dscl . -create /Users/_auth2api PrimaryGroupID 20
+              fi
+              /usr/sbin/dseditgroup -o edit -a _auth2api -t user _auth2api
+            '' + ''
               mkdir -p '${cfg.stateDir}' /var/log/auth2api
               chmod 0750 '${cfg.stateDir}'
               chmod 0755 /var/log/auth2api
@@ -298,10 +330,7 @@
             launchd.daemons.auth2api = {
               serviceConfig = {
                 Label = "org.nixos.auth2api";
-                ProgramArguments = [
-                  (lib.getExe cfg.package)
-                  "--config=${configFile}"
-                ];
+                ProgramArguments = [ launchScript ];
                 WorkingDirectory = cfg.stateDir;
                 StandardOutPath = "/var/log/auth2api/auth2api.log";
                 StandardErrorPath = "/var/log/auth2api/auth2api.err.log";
@@ -342,7 +371,7 @@
             mkdir -p $out/lib/auth2api $out/bin
             cp -r dist node_modules package.json $out/lib/auth2api/
 
-            makeWrapper ${pkgs.nodejs_20}/bin/node $out/bin/auth2api \
+            makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/auth2api \
               --add-flags $out/lib/auth2api/dist/index.js
 
             runHook postInstall
@@ -358,7 +387,7 @@
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            nodejs_20
+            nodejs_22
             nodePackages.npm
           ];
         };
