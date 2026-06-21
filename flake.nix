@@ -338,7 +338,7 @@
               "auth-dir" = toString cfg.authDir;
             };
 
-            system.activationScripts.auth2api.text = lib.optionalString (cfg.group == "_auth2api") ''
+            system.activationScripts.extraActivation.text = lib.optionalString (cfg.group == "_auth2api") ''
               if ! /usr/bin/dscl . -read /Groups/_auth2api > /dev/null 2>&1; then
                 /usr/sbin/dseditgroup -o create -i ${toString cfg.gid} _auth2api
               fi
