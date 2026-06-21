@@ -14,6 +14,9 @@
         let
           cfg = config.services.auth2api;
           yamlFormat = pkgs.formats.yaml { };
+          settingsApiKeys =
+            if builtins.hasAttr "api-keys" cfg.settings then cfg.settings."api-keys" else [ ];
+          hasConfiguredApiKeys = builtins.isList settingsApiKeys && settingsApiKeys != [ ];
           generatedConfig = yamlFormat.generate "auth2api.yaml" cfg.settings;
           configFile = if cfg.configFile != null then cfg.configFile else generatedConfig;
         in
@@ -88,6 +91,19 @@
           };
 
           config = lib.mkIf cfg.enable {
+            assertions = [
+              {
+                assertion = cfg.configFile != null || hasConfiguredApiKeys;
+                message = ''
+                  services.auth2api requires either services.auth2api.configFile
+                  or a non-empty services.auth2api.settings."api-keys" list.
+                  Without one, auth2api attempts to auto-generate an API key and
+                  write it back to the generated Nix store config file, which is
+                  read-only under NixOS.
+                '';
+              }
+            ];
+
             services.auth2api.settings = lib.mkDefault {
               host = "127.0.0.1";
               port = 8317;
