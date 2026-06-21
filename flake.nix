@@ -50,11 +50,15 @@
             };
 
             configFile = lib.mkOption {
-              type = lib.types.nullOr lib.types.path;
+              type = lib.types.nullOr lib.types.str;
               default = null;
+              example = "/run/secrets/auth2api.yaml";
               description = ''
                 Path to an existing auth2api YAML configuration file. When unset,
                 services.auth2api.settings is rendered to a Nix store YAML file.
+                Use an absolute runtime path such as /run/secrets/auth2api.yaml
+                for secret-bearing configuration that must not be copied into
+                the Nix store.
               '';
             };
 

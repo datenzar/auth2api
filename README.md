@@ -125,8 +125,9 @@ service:
 
 By default the service stores OAuth tokens and stats in `/var/lib/auth2api`.
 For deployments that keep API keys outside the Nix store, set
-`services.auth2api.configFile` to an existing YAML file instead of putting
-`api-keys` in `services.auth2api.settings`.
+`services.auth2api.configFile` to an absolute runtime path such as
+`"/run/secrets/auth2api.yaml"` instead of putting `api-keys` in
+`services.auth2api.settings`.
 
 ## Configuration
 
