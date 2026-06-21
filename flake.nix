@@ -52,6 +52,17 @@
               '';
             };
 
+            port = lib.mkOption {
+              type = lib.types.port;
+              default = 8317;
+              description = ''
+                TCP port auth2api listens on. This is used for the generated
+                configuration and for openFirewall. When configFile is set, keep
+                this value in sync with the port in that external YAML file if
+                openFirewall is enabled.
+              '';
+            };
+
             configFile = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
               default = null;
@@ -106,7 +117,7 @@
 
             services.auth2api.settings = lib.mkDefault {
               host = "127.0.0.1";
-              port = 8317;
+              port = cfg.port;
               "auth-dir" = toString cfg.stateDir;
             };
 
@@ -145,7 +156,7 @@
               "d ${cfg.stateDir} 0750 ${cfg.user} ${cfg.group} - -"
             ];
 
-            networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.settings.port ];
+            networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
           };
         };
     in

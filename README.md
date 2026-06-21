@@ -110,9 +110,9 @@ service:
           services.auth2api = {
             enable = true;
             openFirewall = true;
+            port = 8317;
             settings = {
               host = "0.0.0.0";
-              port = 8317;
               "api-keys" = [ "sk-change-me" ];
             };
           };
@@ -130,7 +130,9 @@ For deployments that keep API keys outside the Nix store, set
 `services.auth2api.settings`. The NixOS module requires either `configFile` or
 a non-empty `settings."api-keys"` list, because generated Nix store
 configuration files are read-only and auth2api cannot auto-save a generated API
-key there at service startup.
+key there at service startup. If `configFile` sets a non-default port and
+`openFirewall = true`, also set `services.auth2api.port` to the same value so
+NixOS opens the port auth2api actually listens on.
 
 ## Configuration
 
