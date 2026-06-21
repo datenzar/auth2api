@@ -385,16 +385,14 @@
         pkgs = import nixpkgs { inherit system; };
       in
       {
-        packages.default = pkgs.buildNpmPackage {
+        packages.default = (pkgs.buildNpmPackage.override { nodejs = pkgs.nodejs_22; }) {
           pname = "auth2api";
           version = "1.0.0";
           src = ./.;
 
-          npmDeps = pkgs.importNpmLock { npmRoot = ./.; };
-          nativeBuildInputs = [
-            pkgs.importNpmLock.npmConfigHook
-            pkgs.makeWrapper
-          ];
+          npmDepsHash = "sha256-lHwY5MQ0nRoOPcURzmJCiXiUxEx9ZwZJSWKbkD4ZuIA=";
+
+          nativeBuildInputs = [ pkgs.makeWrapper ];
 
           npmBuildScript = "build";
 
