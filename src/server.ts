@@ -11,6 +11,7 @@ import {
   createCountTokensHandler,
 } from "./handlers/anthropic";
 import { StatsRecorder } from "./stats/recorder";
+import { getAccountUsageInsight } from "./stats/upstream-usage";
 
 // Simple in-memory rate limiter per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -205,6 +206,17 @@ export function createServer(
     }
     res.json({
       ...statsRecorder.getSnapshot(),
+      generated_at: new Date().toISOString(),
+    });
+  });
+
+  app.get("/admin/usage", async (_req, res) => {
+    const accounts = registry.all().flatMap((p) => p.manager.getTokens());
+    const usage = await Promise.all(
+      accounts.map((token) => getAccountUsageInsight(token)),
+    );
+    res.json({
+      usage,
       generated_at: new Date().toISOString(),
     });
   });
