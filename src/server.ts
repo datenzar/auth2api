@@ -263,7 +263,7 @@ export function createServer(
   app.get("/v1/models", async (_req, res) => {
     const created = Math.floor(Date.now() / 1000);
     const providers = registry.withAccounts();
-    const lists = await Promise.all(providers.map((p) => p.listModels()));
+    const lists = await Promise.all(providers.map((p) => p.listModels(config)));
     const data = lists.flatMap((models) =>
       models.map((m) => ({
         id: m.id,

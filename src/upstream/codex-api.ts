@@ -13,11 +13,16 @@ const DEFAULT_ORIGINATOR = "codex_cli_rs";
 // `cloaking.codex.cli-version` if upstream's minimum changes again.
 const DEFAULT_CLI_VERSION = "0.125.0";
 
-function buildUserAgent(config: Config): string {
+/** Codex CLI version auth2api presents upstream (`cloaking.codex.cli-version`). */
+export function codexCliVersion(config: Config): string {
+  return config.cloaking.codex?.["cli-version"] || DEFAULT_CLI_VERSION;
+}
+
+export function buildUserAgent(config: Config): string {
   const codex = config.cloaking.codex || {};
   if (codex["user-agent"]) return codex["user-agent"];
   const originator = codex.originator || DEFAULT_ORIGINATOR;
-  const version = codex["cli-version"] || DEFAULT_CLI_VERSION;
+  const version = codexCliVersion(config);
   const platform =
     process.platform === "darwin"
       ? "macos"
@@ -55,7 +60,7 @@ function buildHeaders(
     // The current ChatGPT backend doesn't enforce it, but matching the
     // official client makes us less brittle to future Cloudflare/upstream
     // rules. Reuses cli-version so it stays in sync with the User-Agent.
-    version: codex["cli-version"] || DEFAULT_CLI_VERSION,
+    version: codexCliVersion(config),
   };
   if (account.chatgptAccountId) {
     headers["ChatGPT-Account-ID"] = account.chatgptAccountId;

@@ -81,6 +81,11 @@ test("providerForModel routes by model name", () => {
     assert.equal(registry.forModel("gpt-5.4-mini").id, "codex");
     assert.equal(registry.forModel("gpt-5.3-codex").id, "codex");
     assert.equal(registry.forModel("gpt-5.2").id, "codex");
+    // Later generations go to codex too, not the anthropic fallback.
+    assert.equal(registry.forModel("gpt-6-luna").id, "codex");
+    assert.equal(registry.forModel("gpt-6-sol").id, "codex");
+    assert.equal(registry.forModel("gpt-6.1-sol").id, "codex");
+    assert.equal(registry.forModel("gpt-10").id, "codex");
     assert.equal(registry.forModel("o3").id, "codex");
     assert.equal(registry.forModel("o4-mini").id, "codex");
     assert.equal(registry.forModel("codex-mini-latest").id, "codex");
@@ -89,6 +94,7 @@ test("providerForModel routes by model name", () => {
     assert.equal(registry.forModel("gpt-4").id, "anthropic");
     assert.equal(registry.forModel("gpt-4o").id, "anthropic");
     assert.equal(registry.forModel("gpt-4o-mini").id, "anthropic");
+    assert.equal(registry.forModel("gpt-4.1").id, "anthropic");
     // Unknown model defaults to anthropic for backwards compatibility.
     assert.equal(registry.forModel("unknown-model").id, "anthropic");
   } finally {
@@ -1224,4 +1230,60 @@ test("normalizeNotifyHost: IPv4 / hostname pass through unchanged", () => {
   assert.equal(normalizeNotifyHost("192.168.1.5"), "192.168.1.5");
   assert.equal(normalizeNotifyHost("localhost"), "localhost");
   assert.equal(normalizeNotifyHost("auth2api.local"), "auth2api.local");
+});
+
+// ══════════════════════════════════════════════════
+// codex-models — /codex/models client_version
+// ══════════════════════════════════════════════════
+
+import {
+  listCodexModels,
+  __resetCodexModelsCache,
+} from "../src/upstream/codex-models";
+
+test("listCodexModels sends the configured codex cli-version as client_version", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "auth2api-"));
+  __resetCodexModelsCache();
+  let seenUrl = "";
+  let seenUA = "";
+  const restore = withFetchStub(async (input, init) => {
+    seenUrl = String(input);
+    seenUA = String((init?.headers as Record<string, string>)["User-Agent"]);
+    return new Response(
+      JSON.stringify({ models: [{ slug: "gpt-6-luna" }, { slug: "gpt-5.5" }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+  try {
+    const manager = new AccountManager(tmpDir, {
+      provider: "codex",
+      refresh: async () => {
+        throw new Error("unused");
+      },
+    });
+    manager.addAccount({
+      accessToken: "at",
+      refreshToken: "rt",
+      email: "m@example.com",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      accountUuid: "acct",
+      provider: "codex",
+    });
+    const models = await listCodexModels(
+      manager,
+      makeCodexConfig({ "cli-version": "0.162.1" }),
+    );
+    assert.deepEqual(
+      models.map((m) => m.id),
+      ["gpt-6-luna", "gpt-5.5"],
+    );
+    const url = new URL(seenUrl);
+    assert.equal(url.pathname, "/backend-api/codex/models");
+    assert.equal(url.searchParams.get("client_version"), "0.162.1");
+    assert.match(seenUA, /^codex_cli_rs\/0\.162\.1 /);
+  } finally {
+    restore();
+    __resetCodexModelsCache();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
