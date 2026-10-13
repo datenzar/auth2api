@@ -1,9 +1,10 @@
 import { AccountManager } from "../accounts/manager";
+import { Config } from "../config";
+import { buildUserAgent, codexCliVersion } from "./codex-api";
 
 const BASE_URL = "https://chatgpt.com/backend-api";
 const MODELS_PATH = "/codex/models";
 const CACHE_TTL_MS = 5 * 60 * 1000; // matches codex-rs/models-manager DEFAULT_MODEL_CACHE_TTL
-const CLIENT_VERSION = "auth2api/1.0.0";
 
 // Static fallback used when no account is loaded or the upstream /codex/models
 // call fails. User-confirmed list of models currently accepted by the
@@ -12,7 +13,6 @@ const CLIENT_VERSION = "auth2api/1.0.0";
 const FALLBACK_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
-  "gpt-5.4-mini",
   "gpt-5.3-codex",
   "gpt-5.2",
 ];
@@ -37,16 +37,20 @@ let cache: CacheEntry | null = null;
 
 async function fetchUpstream(
   manager: AccountManager,
+  config: Config,
 ): Promise<{ models: UpstreamModel[]; etag: string | null } | null> {
   const result = manager.getNextAccount();
   if (!result.account) return null;
   const account = result.account;
 
-  const url = `${BASE_URL}${MODELS_PATH}?client_version=${encodeURIComponent(CLIENT_VERSION)}`;
+  // The backend wants a semver here (it rejects anything else with 400
+  // "Invalid client_version format") and gates the model list on it, so send
+  // the same version the responses calls claim.
+  const url = `${BASE_URL}${MODELS_PATH}?client_version=${encodeURIComponent(codexCliVersion(config))}`;
   const headers: Record<string, string> = {
     Authorization: `Bearer ${account.token.accessToken}`,
     Accept: "application/json",
-    "User-Agent": `auth2api/1.0.0`,
+    "User-Agent": buildUserAgent(config),
   };
   if (account.chatgptAccountId) {
     headers["ChatGPT-Account-ID"] = account.chatgptAccountId;
@@ -101,13 +105,14 @@ async function fetchUpstream(
 
 export async function listCodexModels(
   manager: AccountManager,
+  config: Config,
 ): Promise<Array<{ id: string; owned_by: string }>> {
   // Cache hit within TTL — return immediately.
   if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.models.map((m) => ({ id: m.slug, owned_by: "openai" }));
   }
 
-  const fresh = await fetchUpstream(manager);
+  const fresh = await fetchUpstream(manager, config);
   if (fresh) {
     cache = {
       fetchedAt: Date.now(),
